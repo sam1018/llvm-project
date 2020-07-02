@@ -82,6 +82,11 @@ New checks
   Finds ``s.find(...) == string::npos`` comparisons (for various string-like types)
   and suggests replacing with ``absl::StrContains()``.
 
+- New :doc:`bugprone-reference-returned-from-temporary
+  <clang-tidy/checks/bugprone-reference-returned-from-temporary>` check.
+
+  FIXME: add release notes.
+
 - New :doc:`cppcoreguidelines-avoid-non-const-global-variables
   <clang-tidy/checks/cppcoreguidelines-avoid-non-const-global-variables>` check.
   Finds non-const global variables as described in check I.2 of C++ Core
