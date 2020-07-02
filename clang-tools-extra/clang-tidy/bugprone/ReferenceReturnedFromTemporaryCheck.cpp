@@ -22,7 +22,8 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
       traverse(TK_AsIs,
                varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
                        hasInitializer(
-                           expr(hasDescendant(
+                           expr(unless(hasDescendant(lambdaExpr())),
+                                hasDescendant(
                                     materializeTemporaryExpr().bind("theTemp")))
                                .bind("theInitializer")))
                    .bind("theVarDecl")),
@@ -40,16 +41,24 @@ void ReferenceReturnedFromTemporaryCheck::check(
   if (Matchedtemporary->getStorageDuration() != SD_FullExpression)
     return;
 
-  const auto &tempDeclName =
-      Matchedtemporary->getType()->getAsCXXRecordDecl()->getName();
+  const auto *TempCXXDecl = Matchedtemporary->getType()->getAsCXXRecordDecl();
 
-  // skip if temporary is an iterator, as iterator's dereferenced object's lifetime
-  // is not bound to the iterator object
-  if (llvm::Regex(".*iterator.*", llvm::Regex::IgnoreCase).match(tempDeclName))
+  if (!TempCXXDecl) {
+    diag(Matchedtemporary->getBeginLoc(),
+         "Matched: %0, Temporary is not CXXDecl")
+        << MatchedDecl;
+    return;
+  }
+
+  const auto &TempDeclName = TempCXXDecl->getName();
+
+  // skip if temporary is an iterator, as iterator's dereferenced object's
+  // lifetime is not bound to the iterator object
+  if (llvm::Regex(".*iterator.*", llvm::Regex::IgnoreCase).match(TempDeclName))
     return;
 
   diag(MatchedDecl->getLocation(), "Matched: %0, Temporary Name: %1")
-      << MatchedDecl << tempDeclName;
+      << MatchedDecl << TempDeclName;
 }
 
 } // namespace bugprone
