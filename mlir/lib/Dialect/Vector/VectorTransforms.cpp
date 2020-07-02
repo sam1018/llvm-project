@@ -1291,8 +1291,8 @@ public:
       Value b = rewriter.create<vector::BroadcastOp>(loc, rhsType, x);
       Value m;
       if (acc) {
-        Value z = rewriter.create<vector::ExtractOp>(loc, rhsType, acc, pos);
-        m = rewriter.create<vector::FMAOp>(loc, b, op.rhs(), z);
+        Value e = rewriter.create<vector::ExtractOp>(loc, rhsType, acc, pos);
+        m = rewriter.create<vector::FMAOp>(loc, b, op.rhs(), e);
       } else {
         m = rewriter.create<MulFOp>(loc, b, op.rhs());
       }
@@ -1328,6 +1328,8 @@ public:
     int64_t trueDim = dimSizes[0].cast<IntegerAttr>().getInt();
 
     if (rank == 1) {
+      // Express constant 1-D case in explicit vector form:
+      //   [T,..,T,F,..,F].
       SmallVector<bool, 4> values(dstType.getDimSize(0));
       for (int64_t d = 0; d < trueDim; d++)
         values[d] = true;
@@ -1364,8 +1366,7 @@ public:
 ///   %1 = select %0, %l, %zeroes    |
 ///   %r = vector.insert %1, %pr [i] | d-times
 ///   %x = ....
-/// When rank == 1, the selection operator is not needed,
-/// and we can assign the true/false value right away.
+/// until a one-dimensional vector is reached.
 class CreateMaskOpLowering : public OpRewritePattern<vector::CreateMaskOp> {
 public:
   using OpRewritePattern<vector::CreateMaskOp>::OpRewritePattern;
@@ -1375,30 +1376,41 @@ public:
     auto loc = op.getLoc();
     auto dstType = op.getResult().getType().cast<VectorType>();
     auto eltType = dstType.getElementType();
+    int64_t dim = dstType.getDimSize(0);
     int64_t rank = dstType.getRank();
     Value idx = op.getOperand(0);
 
-    Value trueVal;
-    Value falseVal;
-    if (rank > 1) {
-      VectorType lowType =
-          VectorType::get(dstType.getShape().drop_front(), eltType);
-      trueVal = rewriter.create<vector::CreateMaskOp>(
-          loc, lowType, op.getOperands().drop_front());
-      falseVal = rewriter.create<ConstantOp>(loc, lowType,
-                                             rewriter.getZeroAttr(lowType));
+    if (rank == 1) {
+      // Express dynamic 1-D case in explicit vector form:
+      //   mask = [0,1,..,n-1] < [a,a,..,a]
+      SmallVector<int64_t, 4> values(dim);
+      for (int64_t d = 0; d < dim; d++)
+        values[d] = d;
+      Value indices =
+          rewriter.create<ConstantOp>(loc, rewriter.getI64VectorAttr(values));
+      Value bound =
+          rewriter.create<IndexCastOp>(loc, rewriter.getI64Type(), idx);
+      Value bounds = rewriter.create<SplatOp>(loc, indices.getType(), bound);
+      rewriter.replaceOpWithNewOp<CmpIOp>(op, CmpIPredicate::slt, indices,
+                                          bounds);
+      return success();
     }
 
+    VectorType lowType =
+        VectorType::get(dstType.getShape().drop_front(), eltType);
+    Value trueVal = rewriter.create<vector::CreateMaskOp>(
+        loc, lowType, op.getOperands().drop_front());
+    Value falseVal = rewriter.create<ConstantOp>(loc, lowType,
+                                                 rewriter.getZeroAttr(lowType));
     Value result = rewriter.create<ConstantOp>(loc, dstType,
                                                rewriter.getZeroAttr(dstType));
-    for (int64_t d = 0, dim = dstType.getDimSize(0); d < dim; d++) {
+    for (int64_t d = 0; d < dim; d++) {
       Value bnd = rewriter.create<ConstantOp>(loc, rewriter.getIndexAttr(d));
       Value val = rewriter.create<CmpIOp>(loc, CmpIPredicate::slt, bnd, idx);
-      if (rank > 1)
-        val = rewriter.create<SelectOp>(loc, val, trueVal, falseVal);
+      Value sel = rewriter.create<SelectOp>(loc, val, trueVal, falseVal);
       auto pos = rewriter.getI64ArrayAttr(d);
       result =
-          rewriter.create<vector::InsertOp>(loc, dstType, val, result, pos);
+          rewriter.create<vector::InsertOp>(loc, dstType, sel, result, pos);
     }
     rewriter.replaceOp(op, result);
     return success();
@@ -1720,7 +1732,7 @@ void ContractionOpToOuterProductOpLowering::rewrite(
 ///   ..
 ///   %x = combine %a %b ..
 /// until a pure contraction is reached (no free/batch dimensions),
-/// which is replaced by a fma/reduction op.
+/// which is replaced by a dot-product/reduction pair.
 ///
 /// TODO(ajcbik): break down into transpose/reshape/cast ops
 ///               when they become available to avoid code dup
@@ -1870,11 +1882,9 @@ Value ContractionOpLowering::lowerReduction(vector::ContractionOp op,
   // Base case.
   if (lhsType.getRank() == 1) {
     assert(rhsType.getRank() == 1 && "corrupt contraction");
-    Value zero = rewriter.create<ConstantOp>(loc, lhsType,
-                                             rewriter.getZeroAttr(lhsType));
-    Value fma = rewriter.create<vector::FMAOp>(loc, op.lhs(), op.rhs(), zero);
+    Value m = rewriter.create<MulFOp>(loc, op.lhs(), op.rhs());
     StringAttr kind = rewriter.getStringAttr("add");
-    return rewriter.create<vector::ReductionOp>(loc, resType, kind, fma,
+    return rewriter.create<vector::ReductionOp>(loc, resType, kind, m,
                                                 op.acc());
   }
   // Construct new iterator types and affine map array attribute.
