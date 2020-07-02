@@ -20,7 +20,7 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
       traverse(TK_AsIs,
-               varDecl(hasType(lValueReferenceType()),
+               varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
                        hasInitializer(
                            expr(hasDescendant(
                                     materializeTemporaryExpr().bind("theTemp")))
