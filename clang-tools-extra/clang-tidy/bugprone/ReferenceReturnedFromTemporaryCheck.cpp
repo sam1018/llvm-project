@@ -35,11 +35,21 @@ void ReferenceReturnedFromTemporaryCheck::check(
   const auto *Matchedtemporary =
       Result.Nodes.getNodeAs<MaterializeTemporaryExpr>("theTemp");
 
+  // skip if temporary object's lifetime is beyond the expression, for example
+  // when binding to const&
   if (Matchedtemporary->getStorageDuration() != SD_FullExpression)
     return;
 
-  diag(MatchedDecl->getLocation(), "Matched %0")
-      << MatchedDecl;
+  const auto &tempDeclName =
+      Matchedtemporary->getType()->getAsCXXRecordDecl()->getName();
+
+  // skip if temporary is an iterator, as iterator's dereferenced object's lifetime
+  // is not bound to the iterator object
+  if (llvm::Regex(".*iterator.*", llvm::Regex::IgnoreCase).match(tempDeclName))
+    return;
+
+  diag(MatchedDecl->getLocation(), "Matched: %0, Temporary Name: %1")
+      << MatchedDecl << tempDeclName;
 }
 
 } // namespace bugprone
