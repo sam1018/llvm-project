@@ -3,14 +3,16 @@
 struct some_struct {
   int val;
   int &get();
-}; 
+};
+
+some_struct create_some_struct();
+void use_some_struct(const some_struct &);
 
 // Match tests:
-some_struct f();
 
 int &match1 = some_struct().get();
 // CHECK-MESSAGES: :[[@LINE-1]]:6: warning: Matched: 'match1', Temporary Name: some_struct [bugprone-reference-returned-from-temporary]
-const int &match2 = f().get();
+const int &match2 = create_some_struct().get();
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match2', Temporary Name: some_struct [bugprone-reference-returned-from-temporary]
 
 // No match tests:
@@ -28,3 +30,5 @@ void some_func(const int &no_match_function_params = {});
 // do not match if the temporary object's decl name contains *iterator*
 struct test_Iterator_ : public some_struct {};
 int &no_match_temp_is_iterator = test_Iterator_().get();
+// do not match lambda
+const auto &no_match_lambda = []() { use_some_struct(some_struct()); };
