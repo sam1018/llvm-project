@@ -20,19 +20,22 @@ namespace {
 AST_MATCHER(MaterializeTemporaryExpr, isSD_FullExpression) {
   return Node.getStorageDuration() == SD_FullExpression;
 }
+
+AST_MATCHER(Expr, isLValue) { return Node.isLValue(); }
 } // namespace
 
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
+  const auto &initExprCheck =
+      expr(unless(lambdaExpr()),
+           traverse(TK_AsIs,
+                    hasDescendant(materializeTemporaryExpr(
+                                      isSD_FullExpression(), unless(isLValue()))
+                                      .bind("theTemp"))));
+
   Finder->addMatcher(
-      varDecl(
-          hasType(lValueReferenceType()), unless(parmVarDecl()),
-          hasInitializer(
-              expr(unless(lambdaExpr()),
-                   traverse(TK_AsIs, hasDescendant(materializeTemporaryExpr(
-                                                       isSD_FullExpression())
-                                                       .bind("theTemp"))))
-                  .bind("theInitializer")))
+      varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
+              hasInitializer(initExprCheck.bind("theInitializer")))
           .bind("theVarDecl"),
       this);
 }

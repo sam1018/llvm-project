@@ -7,6 +7,8 @@ struct some_struct {
 
 some_struct create_some_struct();
 void use_some_struct(const some_struct &);
+some_struct use_some_struct2(const some_struct &);
+void use_int(const int&);
 
 // Match tests:
 
@@ -32,3 +34,6 @@ struct test_Iterator_ : public some_struct {};
 int &no_match_temp_is_iterator = test_Iterator_().get();
 // do not match lambda
 const auto &no_match_lambda = []() { use_some_struct(some_struct()); };
+// do not match temporary function args
+const auto &no_match_arg_1 = use_some_struct2(some_struct());
+const auto &no_match_arg_2 = use_some_struct2(create_some_struct());
