@@ -42,6 +42,12 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
+  const auto *MatchedInitExpr = Result.Nodes.getNodeAs<Expr>("theInitializer");
+  const auto *InitCallExpr = dyn_cast<CallExpr>(MatchedInitExpr);
+  if (!InitCallExpr ||
+      !InitCallExpr->getCallReturnType(*Result.Context)->isReferenceType())
+    return;
+
   const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
   const auto *Matchedtemporary =
       Result.Nodes.getNodeAs<MaterializeTemporaryExpr>("theTemp");

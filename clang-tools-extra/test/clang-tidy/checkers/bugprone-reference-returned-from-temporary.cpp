@@ -2,7 +2,8 @@
 
 struct some_struct {
   int val;
-  int &get();
+  int &ref_get();
+  int get();
 };
 
 some_struct create_some_struct();
@@ -11,10 +12,9 @@ some_struct use_some_struct2(const some_struct &);
 void use_int(const int&);
 
 // Match tests:
-
-int &match1 = some_struct().get();
+int &match1 = some_struct().ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:6: warning: Matched: 'match1', Temporary Name: some_struct [bugprone-reference-returned-from-temporary]
-const int &match2 = create_some_struct().get();
+const int &match2 = create_some_struct().ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match2', Temporary Name: some_struct [bugprone-reference-returned-from-temporary]
 
 // No match tests:
@@ -26,14 +26,16 @@ int some_func();
 const int &no_match_init_promoted_to_lvalue_2 = some_func();
 // initializer has no temporary object
 some_struct ob1;
-const int &no_match_init_has_no_temporary = ob1.get();
+const int &no_match_init_has_no_temporary = ob1.ref_get();
 // function parameters do not match
 void some_func(const int &no_match_function_params = {});
 // do not match if the temporary object's decl name contains *iterator*
 struct test_Iterator_ : public some_struct {};
-int &no_match_temp_is_iterator = test_Iterator_().get();
+int &no_match_temp_is_iterator = test_Iterator_().ref_get();
 // do not match lambda
 const auto &no_match_lambda = []() { use_some_struct(some_struct()); };
 // do not match temporary function args
 const auto &no_match_arg_1 = use_some_struct2(some_struct());
 const auto &no_match_arg_2 = use_some_struct2(create_some_struct());
+// if function returns non-ref, that's ok
+const int &no_match_function_returns_non_ref = some_struct().get();
