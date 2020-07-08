@@ -16,49 +16,19 @@ namespace clang {
 namespace tidy {
 namespace bugprone {
 
-namespace {
-AST_MATCHER(MaterializeTemporaryExpr, isSD_FullExpression) {
-  return Node.getStorageDuration() == SD_FullExpression;
-}
-} // namespace
-
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
-  const auto &initExprCheck = expr(
-      unless(lambdaExpr()),
-      traverse(TK_AsIs,
-               hasDescendant(materializeTemporaryExpr(isSD_FullExpression())
-                                 .bind("theTemp"))));
-
   Finder->addMatcher(
       varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
-              hasInitializer(initExprCheck.bind("theInitializer")))
+              hasInitializer(cxxMemberCallExpr().bind("theMemberCall")))
           .bind("theVarDecl"),
       this);
 }
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *MatchedInitExpr = Result.Nodes.getNodeAs<Expr>("theInitializer");
-  const auto *InitCallExpr = dyn_cast<CallExpr>(MatchedInitExpr);
-  if (!InitCallExpr ||
-      !InitCallExpr->getCallReturnType(*Result.Context)->isReferenceType())
-    return;
-  const auto *MemberCallExpr = dyn_cast<CXXMemberCallExpr>(MatchedInitExpr);
-  std::string temp;
-  llvm::raw_string_ostream os(temp);
-  if (MemberCallExpr) {
-    MemberCallExpr->getImplicitObjectArgument()->dump(os);
-  } else {
-    temp = "Non member function call!!";
-  }
-
   const auto *MatchedMemberCallExpr =
-      Result.Nodes.getNodeAs<CXXMemberCallExpr>("theInitializer");
-
-  // initializer must be a member call
-  if (!MatchedMemberCallExpr)
-    return;
+      Result.Nodes.getNodeAs<CXXMemberCallExpr>("theMemberCall");
 
   // the member function's return type must be a reference
   if (!MatchedMemberCallExpr->getCallReturnType(*Result.Context)
@@ -66,7 +36,7 @@ void ReferenceReturnedFromTemporaryCheck::check(
     return;
 
   // walk back through callers as long as member caller itself is a member function whose return type is also a reference
-  auto *CurrentCallExpr = MemberCallExpr;
+  auto *CurrentCallExpr = MatchedMemberCallExpr;
   const auto *Caller =
       dyn_cast<CXXMemberCallExpr>(CurrentCallExpr->getImplicitObjectArgument());
   while (Caller &&
@@ -77,18 +47,16 @@ void ReferenceReturnedFromTemporaryCheck::check(
   }
 
   // after finishing the previous loop, now we want to check if current MemberCaller is a temporary
-  if (!isa<MaterializeTemporaryExpr>(
-          CurrentCallExpr->getImplicitObjectArgument()))
+  const auto *TempOb = dyn_cast<MaterializeTemporaryExpr>(
+      CurrentCallExpr->getImplicitObjectArgument());
+  if (!TempOb)
     return;
 
   const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
-  const auto *Matchedtemporary =
-      Result.Nodes.getNodeAs<MaterializeTemporaryExpr>("theTemp");
-
-  const auto *TempCXXDecl = Matchedtemporary->getType()->getAsCXXRecordDecl();
+  const auto *TempCXXDecl = TempOb->getType()->getAsCXXRecordDecl();
 
   if (!TempCXXDecl) {
-    diag(Matchedtemporary->getBeginLoc(),
+    diag(TempOb->getBeginLoc(),
          "Matched: %0, Temporary is not CXXRecordDecl")
         << MatchedDecl;
     return;
