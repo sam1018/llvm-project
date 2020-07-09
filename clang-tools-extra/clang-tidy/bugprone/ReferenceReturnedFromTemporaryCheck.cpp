@@ -17,8 +17,6 @@ namespace tidy {
 namespace bugprone {
 
 namespace {
-AST_MATCHER(Expr, isLValue) { return Node.isLValue(); }
-
 std::vector<const Stmt *> getChildren(const Stmt *stmt) {
   if (isa<CallExpr>(stmt) && !isa<CXXOperatorCallExpr>(stmt)) {
     const auto *callExpr = dyn_cast<CallExpr>(stmt);
@@ -65,21 +63,27 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
       varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
-              hasInitializer(expr(isLValue()).bind("theInitializer")))
+              hasInitializer(expr().bind("theInitializer")))
           .bind("theVarDecl"),
       this);
 }
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *TempOb = GetTemporaryWithSdFullExpression(
-      Result.Nodes.getNodeAs<Expr>("theInitializer"));
+  const auto *MatchedInitExpr = Result.Nodes.getNodeAs<Expr>("theInitializer");
+
+  if (isa<CallExpr>(MatchedInitExpr)) {
+    const auto *callExpr = dyn_cast<CallExpr>(MatchedInitExpr);
+    const auto &RetType = callExpr->getCallReturnType(*Result.Context);
+    if (!RetType->isPointerType() && !RetType->isReferenceType())
+      return;
+  }
+
+  const auto *TempOb = GetTemporaryWithSdFullExpression(MatchedInitExpr);
   const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
 
   if (!TempOb)
     return;
-
-  //MatchedDecl->dump();
 
   const auto *TempCXXDecl = TempOb->getType()->getAsCXXRecordDecl();
 

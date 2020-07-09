@@ -44,8 +44,7 @@ int no_match_non_ref;
 const int &no_match_init_promoted_to_lvalue_1 = {};
 int some_func();
 const int &no_match_init_promoted_to_lvalue_2 = some_func();
-const int &no_match_init_promoted_to_lvalue_3 = create_my_struct().get_this_ref().get();
-const int &no_match_init_promoted_to_lvalue_4{some_func()};
+const int &no_match_init_promoted_to_lvalue_3{some_func()};
 // initializer has no temporary object
 my_struct ob1;
 const int &no_match_init_has_no_temporary = ob1.ref_get();
@@ -63,3 +62,4 @@ const auto &no_match_arg_3 = arg_rvalue_ref_my_struct(create_my_struct());
 const auto &no_match_arg_4 = arg_cr_int_returns_r_my_struct(create_my_struct().ref_get());
 // if function returns non-ref, that's ok
 const int &no_match_function_returns_non_ref = my_struct().get();
+const int &no_match_function_returns_non_ref2 = create_my_struct().get_this_ref().get();
