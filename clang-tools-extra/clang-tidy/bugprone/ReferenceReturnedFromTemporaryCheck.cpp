@@ -41,9 +41,10 @@ std::vector<const Stmt *> getChildren(const Stmt *stmt) {
   return {stmt->child_begin(), stmt->child_end()};
 }
 
-const MaterializeTemporaryExpr *GetTemporaryWithSdFullExpression(const Stmt *stmt) {
+const MaterializeTemporaryExpr *
+GetTemporaryWithSdFullExpression(const Stmt *stmt) {
   if (isa<MaterializeTemporaryExpr>(stmt)) {
-    const auto* temp = dyn_cast<MaterializeTemporaryExpr>(stmt);
+    const auto *temp = dyn_cast<MaterializeTemporaryExpr>(stmt);
     if (temp->getStorageDuration() == SD_FullExpression)
       return temp;
   }
@@ -62,8 +63,9 @@ const MaterializeTemporaryExpr *GetTemporaryWithSdFullExpression(const Stmt *stm
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
-      varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
-              hasInitializer(expr().bind("theInitializer")))
+      varDecl(
+          hasType(lValueReferenceType()), unless(parmVarDecl()),
+          hasInitializer(ignoringParenImpCasts(expr().bind("theInitializer"))))
           .bind("theVarDecl"),
       this);
 }
