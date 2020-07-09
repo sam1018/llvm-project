@@ -17,6 +17,10 @@ namespace tidy {
 namespace bugprone {
 
 namespace {
+AST_MATCHER(Expr, isLValue) { return Node.isLValue(); }
+}
+
+namespace {
 std::vector<const Stmt *> getChildren(const Stmt *stmt) {
   if (isa<CallExpr>(stmt) && !isa<CXXOperatorCallExpr>(stmt)) {
     const auto *callExpr = dyn_cast<CallExpr>(stmt);
@@ -65,7 +69,7 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
   Finder->addMatcher(
       varDecl(
           hasType(lValueReferenceType()), unless(parmVarDecl()),
-          hasInitializer(ignoringParenImpCasts(expr().bind("theInitializer"))))
+          hasInitializer(ignoringParenImpCasts(expr(isLValue()).bind("theInitializer"))))
           .bind("theVarDecl"),
       this);
 }
