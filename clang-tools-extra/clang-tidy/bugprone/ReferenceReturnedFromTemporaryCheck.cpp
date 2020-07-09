@@ -17,68 +17,72 @@ namespace tidy {
 namespace bugprone {
 
 namespace {
-bool satisfiesCondition(const Expr *expr, const ASTContext &context) {
-  if (isa<CXXMemberCallExpr>(expr)) {
-    const auto *MemberCallExpr = dyn_cast<CXXMemberCallExpr>(expr);
-    const auto &RetType = MemberCallExpr->getCallReturnType(context);
-    return RetType->isReferenceType() || RetType->isPointerType();
+AST_MATCHER(Expr, isLValue) { return Node.isLValue(); }
+
+std::vector<const Stmt *> getChildren(const Stmt *stmt) {
+  if (isa<CallExpr>(stmt) && !isa<CXXOperatorCallExpr>(stmt)) {
+    const auto *callExpr = dyn_cast<CallExpr>(stmt);
+    llvm::SetVector<const Stmt *> all_args(callExpr->arg_begin(),
+                                           callExpr->arg_end());
+    llvm::SetVector<const Stmt *> non_arg_children(callExpr->child_begin(),
+                                                   callExpr->child_end());
+
+    auto size1 = non_arg_children.size();
+    non_arg_children.set_subtract(all_args);
+    auto size2 = non_arg_children.size();
+
+    // temporary... should be assert, checking like below as I am only doing release builds now...
+    if (size1 != size2 + all_args.size())
+      llvm::report_fatal_error(
+          "Unexpected. Set subtraction produced wrong result.");
+
+    return non_arg_children.takeVector();
   }
 
-  if (isa<MemberExpr>(expr)) {
-    const auto *MemberVarExpr = dyn_cast<MemberExpr>(expr);
-    return MemberVarExpr->isLValue();
-  }
-
-  return false;
+  return {stmt->child_begin(), stmt->child_end()};
 }
 
-Expr *CallerExpr(const Expr *expr) {
-  if (isa<CXXMemberCallExpr>(expr)) {
-    const auto *MemberCallExpr = dyn_cast<CXXMemberCallExpr>(expr);
-    return MemberCallExpr->getImplicitObjectArgument();
-  }
+const MaterializeTemporaryExpr *GetTemp(const Stmt *stmt) {
+  if (isa<MaterializeTemporaryExpr>(stmt))
+    return dyn_cast<MaterializeTemporaryExpr>(stmt);
 
-  if (isa<MemberExpr>(expr)) {
-    const auto *MemberVarExpr = dyn_cast<MemberExpr>(expr);
-    return MemberVarExpr->getBase();
+  for (const auto *child : getChildren(stmt)) {
+    const auto *res = GetTemp(child);
+    if (res)
+      return res;
   }
 
   return nullptr;
 }
+
 } // namespace
 
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
       varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
-              hasInitializer(expr(anyOf(cxxMemberCallExpr(), memberExpr()))
-                                 .bind("theInitializer")))
+              hasInitializer(expr(isLValue()).bind("theInitializer")))
           .bind("theVarDecl"),
       this);
 }
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *CurrentExpr = Result.Nodes.getNodeAs<Expr>("theInitializer");
-  if (!satisfiesCondition(CurrentExpr, *Result.Context))
-    return;
+  const auto *TempOb =
+      GetTemp(Result.Nodes.getNodeAs<Expr>("theInitializer"));
+  const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
 
-  const auto *PrevExpr = CurrentExpr;
-  CurrentExpr = CallerExpr(CurrentExpr);
-  while (satisfiesCondition(CurrentExpr, *Result.Context)) {
-    PrevExpr = CurrentExpr;
-    CurrentExpr = CallerExpr(CurrentExpr);
+
+  if (!TempOb) {
+    //MatchedDecl->dump();
+    return;
   }
 
-  const auto *TempOb = dyn_cast<MaterializeTemporaryExpr>(CurrentExpr);
-  if (!TempOb)
-    return;
-
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
   const auto *TempCXXDecl = TempOb->getType()->getAsCXXRecordDecl();
 
   if (!TempCXXDecl) {
-    diag(TempOb->getBeginLoc(), "Matched: %0, Temporary is not CXXRecordDecl")
+    diag(TempOb->getBeginLoc(),
+         "Matched: %0, Temporary is not CXXRecordDecl")
         << MatchedDecl;
     return;
   }

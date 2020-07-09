@@ -6,6 +6,7 @@ struct my_struct {
   int get();
   my_struct &get_this_ref();
   my_struct *get_this_ptr();
+  my_struct *operator->();
 };
 
 my_struct create_my_struct();
@@ -29,6 +30,8 @@ const int &match5 = my_struct().get_this_ptr()->val;
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match5', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match6 = my_struct().get_this_ptr()->ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match6', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+const int &match7 = my_struct()->val;
+// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match7', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 
 // No match tests:
 // non-reference var decls do not match
