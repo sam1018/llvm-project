@@ -43,15 +43,15 @@ std::vector<const Stmt *> getChildren(const Stmt *stmt) {
   return {stmt->child_begin(), stmt->child_end()};
 }
 
-const MaterializeTemporaryExpr *GetExpiringTemporary(const Stmt *stmt) {
+const MaterializeTemporaryExpr *GetTemporaryWithSdFullExpression(const Stmt *stmt) {
   if (isa<MaterializeTemporaryExpr>(stmt)) {
     const auto* temp = dyn_cast<MaterializeTemporaryExpr>(stmt);
-    if (temp->isXValue())
+    if (temp->getStorageDuration() == SD_FullExpression)
       return temp;
   }
 
   for (const auto *child : getChildren(stmt)) {
-    const auto *res = GetExpiringTemporary(child);
+    const auto *res = GetTemporaryWithSdFullExpression(child);
     if (res)
       return res;
   }
@@ -72,8 +72,8 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *TempOb =
-      GetExpiringTemporary(Result.Nodes.getNodeAs<Expr>("theInitializer"));
+  const auto *TempOb = GetTemporaryWithSdFullExpression(
+      Result.Nodes.getNodeAs<Expr>("theInitializer"));
   const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
 
   if (!TempOb)

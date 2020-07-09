@@ -1,12 +1,16 @@
 // RUN: %check_clang_tidy %s bugprone-reference-returned-from-temporary %t
 
+struct my_struct2 {
+  int val2;
+};
+
 struct my_struct {
   int val;
   int &ref_get();
   int get();
   my_struct &get_this_ref();
   my_struct *get_this_ptr();
-  my_struct *operator->();
+  my_struct2 *operator->();
 };
 
 my_struct create_my_struct();
@@ -30,6 +34,8 @@ const int &match5 = my_struct().get_this_ptr()->val;
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match5', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match6 = my_struct().get_this_ptr()->ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match6', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+const int &match7 = my_struct()->val2;
+// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match7', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 
 // No match tests:
 // non-reference var decls do not match
@@ -40,7 +46,6 @@ int some_func();
 const int &no_match_init_promoted_to_lvalue_2 = some_func();
 const int &no_match_init_promoted_to_lvalue_3 = create_my_struct().get_this_ref().get();
 const int &no_match_init_promoted_to_lvalue_4{some_func()};
-const int &no_match_init_promoted_to_lvalue_5 = my_struct()->val;
 // initializer has no temporary object
 my_struct ob1;
 const int &no_match_init_has_no_temporary = ob1.ref_get();
