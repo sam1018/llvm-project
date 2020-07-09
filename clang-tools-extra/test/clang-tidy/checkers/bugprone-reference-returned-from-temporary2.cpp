@@ -5,5 +5,7 @@
 
 std::optional<std::pair<std::string, std::string>> f() { return std::make_optional(std::make_pair("abc", "def")); }
 
-const auto &x = f()->first;
-// CHECK-MESSAGES: :[[@LINE-1]]:13: warning: Matched: 'x', Temporary Name: optional [bugprone-reference-returned-from-temporary]
+const auto &match1 = f()->first;
+// CHECK-MESSAGES: :[[@LINE-1]]:13: warning: Matched: 'match1', Temporary Name: optional [bugprone-reference-returned-from-temporary]
+
+const auto &no_match1{std::to_string(10)};

@@ -31,7 +31,8 @@ std::vector<const Stmt *> getChildren(const Stmt *stmt) {
     non_arg_children.set_subtract(all_args);
     auto size2 = non_arg_children.size();
 
-    // temporary... should be assert, checking like below as I am only doing release builds now...
+    // temporary... should be assert, checking like below as I am only doing
+    // release builds now...
     if (size1 != size2 + all_args.size())
       llvm::report_fatal_error(
           "Unexpected. Set subtraction produced wrong result.");
@@ -42,12 +43,15 @@ std::vector<const Stmt *> getChildren(const Stmt *stmt) {
   return {stmt->child_begin(), stmt->child_end()};
 }
 
-const MaterializeTemporaryExpr *GetTemp(const Stmt *stmt) {
-  if (isa<MaterializeTemporaryExpr>(stmt))
-    return dyn_cast<MaterializeTemporaryExpr>(stmt);
+const MaterializeTemporaryExpr *GetExpiringTemporary(const Stmt *stmt) {
+  if (isa<MaterializeTemporaryExpr>(stmt)) {
+    const auto* temp = dyn_cast<MaterializeTemporaryExpr>(stmt);
+    if (temp->isXValue())
+      return temp;
+  }
 
   for (const auto *child : getChildren(stmt)) {
-    const auto *res = GetTemp(child);
+    const auto *res = GetExpiringTemporary(child);
     if (res)
       return res;
   }
@@ -69,20 +73,18 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
   const auto *TempOb =
-      GetTemp(Result.Nodes.getNodeAs<Expr>("theInitializer"));
+      GetExpiringTemporary(Result.Nodes.getNodeAs<Expr>("theInitializer"));
   const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
 
-
-  if (!TempOb) {
-    //MatchedDecl->dump();
+  if (!TempOb)
     return;
-  }
+
+  //MatchedDecl->dump();
 
   const auto *TempCXXDecl = TempOb->getType()->getAsCXXRecordDecl();
 
   if (!TempCXXDecl) {
-    diag(TempOb->getBeginLoc(),
-         "Matched: %0, Temporary is not CXXRecordDecl")
+    diag(TempOb->getBeginLoc(), "Matched: %0, Temporary is not CXXRecordDecl")
         << MatchedDecl;
     return;
   }
