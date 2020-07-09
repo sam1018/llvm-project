@@ -16,39 +16,61 @@ namespace clang {
 namespace tidy {
 namespace bugprone {
 
+namespace {
+bool satisfiesCondition(const Expr *expr, const ASTContext &context) {
+  if (isa<CXXMemberCallExpr>(expr)) {
+    const auto *MemberCallExpr = dyn_cast<CXXMemberCallExpr>(expr);
+    const auto &RetType = MemberCallExpr->getCallReturnType(context);
+    return RetType->isReferenceType() || RetType->isPointerType();
+  }
+
+  if (isa<MemberExpr>(expr)) {
+    const auto *MemberVarExpr = dyn_cast<MemberExpr>(expr);
+    return MemberVarExpr->isLValue();
+  }
+
+  return false;
+}
+
+Expr *CallerExpr(const Expr *expr) {
+  if (isa<CXXMemberCallExpr>(expr)) {
+    const auto *MemberCallExpr = dyn_cast<CXXMemberCallExpr>(expr);
+    return MemberCallExpr->getImplicitObjectArgument();
+  }
+
+  if (isa<MemberExpr>(expr)) {
+    const auto *MemberVarExpr = dyn_cast<MemberExpr>(expr);
+    return MemberVarExpr->getBase();
+  }
+
+  return nullptr;
+}
+} // namespace
+
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
       varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
-              hasInitializer(cxxMemberCallExpr().bind("theMemberCall")))
+              hasInitializer(expr(anyOf(cxxMemberCallExpr(), memberExpr()))
+                                 .bind("theInitializer")))
           .bind("theVarDecl"),
       this);
 }
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *MatchedMemberCallExpr =
-      Result.Nodes.getNodeAs<CXXMemberCallExpr>("theMemberCall");
-
-  // the member function's return type must be a reference
-  if (!MatchedMemberCallExpr->getCallReturnType(*Result.Context)
-           ->isReferenceType())
+  const auto *CurrentExpr = Result.Nodes.getNodeAs<Expr>("theInitializer");
+  if (!satisfiesCondition(CurrentExpr, *Result.Context))
     return;
 
-  // walk back through callers as long as member caller itself is a member function whose return type is also a reference
-  auto *CurrentCallExpr = MatchedMemberCallExpr;
-  const auto *Caller =
-      dyn_cast<CXXMemberCallExpr>(CurrentCallExpr->getImplicitObjectArgument());
-  while (Caller &&
-         Caller->getCallReturnType(*Result.Context)->isReferenceType()) {
-    CurrentCallExpr = Caller;
-    Caller = dyn_cast<CXXMemberCallExpr>(
-        CurrentCallExpr->getImplicitObjectArgument());
+  const auto *PrevExpr = CurrentExpr;
+  CurrentExpr = CallerExpr(CurrentExpr);
+  while (satisfiesCondition(CurrentExpr, *Result.Context)) {
+    PrevExpr = CurrentExpr;
+    CurrentExpr = CallerExpr(CurrentExpr);
   }
 
-  // after finishing the previous loop, now we want to check if current MemberCaller is a temporary
-  const auto *TempOb = dyn_cast<MaterializeTemporaryExpr>(
-      CurrentCallExpr->getImplicitObjectArgument());
+  const auto *TempOb = dyn_cast<MaterializeTemporaryExpr>(CurrentExpr);
   if (!TempOb)
     return;
 
@@ -56,8 +78,7 @@ void ReferenceReturnedFromTemporaryCheck::check(
   const auto *TempCXXDecl = TempOb->getType()->getAsCXXRecordDecl();
 
   if (!TempCXXDecl) {
-    diag(TempOb->getBeginLoc(),
-         "Matched: %0, Temporary is not CXXRecordDecl")
+    diag(TempOb->getBeginLoc(), "Matched: %0, Temporary is not CXXRecordDecl")
         << MatchedDecl;
     return;
   }
