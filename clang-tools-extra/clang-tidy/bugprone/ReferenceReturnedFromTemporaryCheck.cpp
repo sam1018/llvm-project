@@ -97,7 +97,7 @@ void ReferenceReturnedFromTemporaryCheck::check(
     return;
   }
 
-  const auto &TempDeclName = TempCXXDecl->getName();
+  const auto &TempDeclName = TempCXXDecl->getQualifiedNameAsString();
 
   if (llvm::Regex(TempWhiteListRE, llvm::Regex::IgnoreCase)
           .match(TempDeclName))
