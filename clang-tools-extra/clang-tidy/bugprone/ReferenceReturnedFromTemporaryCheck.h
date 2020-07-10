@@ -21,10 +21,14 @@ namespace bugprone {
 /// http://clang.llvm.org/extra/clang-tidy/checks/bugprone-reference-returned-from-temporary.html
 class ReferenceReturnedFromTemporaryCheck : public ClangTidyCheck {
 public:
-  ReferenceReturnedFromTemporaryCheck(StringRef Name, ClangTidyContext *Context)
-      : ClangTidyCheck(Name, Context) {}
+  ReferenceReturnedFromTemporaryCheck(StringRef Name,
+                                      ClangTidyContext *Context);
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+  void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
+
+private:
+  const std::string TempWhiteListRE;
 };
 
 } // namespace bugprone

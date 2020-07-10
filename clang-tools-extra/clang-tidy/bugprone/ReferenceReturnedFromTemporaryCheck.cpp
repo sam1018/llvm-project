@@ -60,6 +60,16 @@ const MaterializeTemporaryExpr *GetTemporary(const Stmt *stmt) {
 
 } // namespace
 
+ReferenceReturnedFromTemporaryCheck::ReferenceReturnedFromTemporaryCheck(
+    StringRef Name, ClangTidyContext *Context)
+    : ClangTidyCheck(Name, Context),
+      TempWhiteListRE(Options.get("TempWhiteListRE", "")) {}
+
+void ReferenceReturnedFromTemporaryCheck::storeOptions(
+    ClangTidyOptions::OptionMap &Opts) {
+  Options.store(Opts, "TempWhiteListRE", TempWhiteListRE);
+}
+
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
@@ -89,11 +99,7 @@ void ReferenceReturnedFromTemporaryCheck::check(
 
   const auto &TempDeclName = TempCXXDecl->getName();
 
-  // skip if temporary is an iterator, as iterator's dereferenced object's
-  // lifetime is not bound to the iterator object
-  // skip proxy... came from boost::fusion library... and it's probably safe to
-  // skip something called proxy
-  if (llvm::Regex(".*iterator.*|.*proxy.*", llvm::Regex::IgnoreCase)
+  if (llvm::Regex(TempWhiteListRE, llvm::Regex::IgnoreCase)
           .match(TempDeclName))
     return;
 
