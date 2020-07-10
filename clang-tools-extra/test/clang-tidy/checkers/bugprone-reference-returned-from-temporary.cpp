@@ -45,6 +45,7 @@ const int &no_match_init_promoted_to_lvalue_1 = {};
 int some_func();
 const int &no_match_init_promoted_to_lvalue_2 = some_func();
 const int &no_match_init_promoted_to_lvalue_3{some_func()};
+const my_struct &no_match_init_promoted_to_lvalue_4{true ? my_struct() : my_struct()};
 // initializer has no temporary object
 my_struct ob1;
 const int &no_match_init_has_no_temporary = ob1.ref_get();
@@ -52,7 +53,9 @@ const int &no_match_init_has_no_temporary = ob1.ref_get();
 void some_func(const int &no_match_function_params = {});
 // do not match if the temporary object's decl name contains *iterator*
 struct test_Iterator_ : public my_struct {};
+struct test_Proxy_ : public my_struct {};
 int &no_match_temp_is_iterator = test_Iterator_().ref_get();
+int &no_match_temp_is_proxy = test_Proxy_().ref_get();
 // do not match lambda
 const auto &no_match_lambda = []() { arg_cr_my_struct(my_struct()); };
 // do not match temporary function args

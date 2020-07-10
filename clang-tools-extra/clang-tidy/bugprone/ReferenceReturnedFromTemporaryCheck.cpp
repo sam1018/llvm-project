@@ -18,7 +18,7 @@ namespace bugprone {
 
 namespace {
 AST_MATCHER(Expr, isLValue) { return Node.isLValue(); }
-}
+} // namespace
 
 namespace {
 std::vector<const Stmt *> getChildren(const Stmt *stmt) {
@@ -45,16 +45,12 @@ std::vector<const Stmt *> getChildren(const Stmt *stmt) {
   return {stmt->child_begin(), stmt->child_end()};
 }
 
-const MaterializeTemporaryExpr *
-GetTemporaryWithSdFullExpression(const Stmt *stmt) {
-  if (isa<MaterializeTemporaryExpr>(stmt)) {
-    const auto *temp = dyn_cast<MaterializeTemporaryExpr>(stmt);
-    if (temp->getStorageDuration() == SD_FullExpression)
-      return temp;
-  }
+const MaterializeTemporaryExpr *GetTemporary(const Stmt *stmt) {
+  if (isa<MaterializeTemporaryExpr>(stmt))
+    return dyn_cast<MaterializeTemporaryExpr>(stmt);
 
   for (const auto *child : getChildren(stmt)) {
-    const auto *res = GetTemporaryWithSdFullExpression(child);
+    const auto *res = GetTemporary(child);
     if (res)
       return res;
   }
@@ -67,30 +63,22 @@ GetTemporaryWithSdFullExpression(const Stmt *stmt) {
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
-      varDecl(
-          hasType(lValueReferenceType()), unless(parmVarDecl()),
-          hasInitializer(ignoringParenImpCasts(expr(isLValue()).bind("theInitializer"))))
+      varDecl(hasType(lValueReferenceType()), unless(parmVarDecl()),
+              hasInitializer(
+                  traverse(TK_AsIs, expr(isLValue()).bind("theInitializer"))))
           .bind("theVarDecl"),
       this);
 }
 
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *MatchedInitExpr = Result.Nodes.getNodeAs<Expr>("theInitializer");
+  const auto *TempOb =
+      GetTemporary(Result.Nodes.getNodeAs<Expr>("theInitializer"));
 
-  if (isa<CallExpr>(MatchedInitExpr)) {
-    const auto *callExpr = dyn_cast<CallExpr>(MatchedInitExpr);
-    const auto &RetType = callExpr->getCallReturnType(*Result.Context);
-    if (!RetType->isPointerType() && !RetType->isReferenceType())
-      return;
-  }
-
-  const auto *TempOb = GetTemporaryWithSdFullExpression(MatchedInitExpr);
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
-
-  if (!TempOb)
+  if (!TempOb || TempOb->getStorageDuration() != SD_FullExpression)
     return;
 
+  const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
   const auto *TempCXXDecl = TempOb->getType()->getAsCXXRecordDecl();
 
   if (!TempCXXDecl) {
@@ -103,7 +91,10 @@ void ReferenceReturnedFromTemporaryCheck::check(
 
   // skip if temporary is an iterator, as iterator's dereferenced object's
   // lifetime is not bound to the iterator object
-  if (llvm::Regex(".*iterator.*", llvm::Regex::IgnoreCase).match(TempDeclName))
+  // skip proxy... came from boost::fusion library... and it's probably safe to
+  // skip something called proxy
+  if (llvm::Regex(".*iterator.*|.*proxy.*", llvm::Regex::IgnoreCase)
+          .match(TempDeclName))
     return;
 
   diag(MatchedDecl->getLocation(), "Matched: %0, Temporary Name: %1")
