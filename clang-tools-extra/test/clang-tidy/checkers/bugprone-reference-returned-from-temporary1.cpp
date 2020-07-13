@@ -23,19 +23,19 @@ void use_int(const int&);
 
 // Match tests:
 int &match1 = my_struct().ref_get();
-// CHECK-MESSAGES: :[[@LINE-1]]:6: warning: Matched: 'match1', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:25: warning: Matched: 'match1', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match2 = create_my_struct().ref_get();
-// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match2', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:38: warning: Matched: 'match2', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match3 = create_my_struct().get_this_ref().ref_get();
-// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match3', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:38: warning: Matched: 'match3', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match4 = create_my_struct(create_my_struct().ref_get()).get_this_ref().ref_get();
-// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match4', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:66: warning: Matched: 'match4', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match5 = my_struct().get_this_ptr()->val;
-// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match5', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched: 'match5', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match6 = my_struct().get_this_ptr()->ref_get();
-// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match6', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched: 'match6', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 const int &match7 = my_struct()->val2;
-// CHECK-MESSAGES: :[[@LINE-1]]:12: warning: Matched: 'match7', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched: 'match7', Temporary Name: my_struct [bugprone-reference-returned-from-temporary]
 
 // No match tests:
 // non-reference var decls do not match

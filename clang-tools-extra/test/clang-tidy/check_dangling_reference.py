@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 
 test_path = os.path.dirname(os.path.realpath(__file__))
@@ -10,11 +11,17 @@ def extra_args(test_case):
     if test_case == 2:
         return ["-extra-arg=-std=c++17"]
     if test_case == 3:
-        test3_check_options = "{CheckOptions: [{key: bugprone-reference-returned-from-temporary.TempWhiteListRE, value: '.*iterator.*|.*proxy.*'}]}"
+        test3_check_options = "{CheckOptions: [{key: bugprone-reference-returned-from-temporary.TempWhiteListRE, value: '.*iterator.*|.*proxy.*|ns::match_exact_name_in_ns'}]}"
         return [f"-config={test3_check_options}"]
     return []
 
-for test_case in range(1, 4):
+all_test_cases = range(1, 4)
+if len(sys.argv) > 1:
+    test_case_to_run = int(sys.argv[1])
+    if test_case_to_run in all_test_cases:
+        all_test_cases = [test_case_to_run]
+
+for test_case in all_test_cases:
     print(f'Running test case {test_case}')
     cmd = ["python", test_runner, f"{test_file_name_prefix}{test_case}.cpp", test_name, "temp~"]
     cmd.extend(extra_args(test_case))
