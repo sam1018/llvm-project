@@ -198,10 +198,11 @@ void ReferenceReturnedFromTemporaryCheck::check(
   const auto *MatchedVarType =
       Result.Nodes.getNodeAs<LValueReferenceType>("theVarType");
 
-  diag(TempOb->getEndLoc(), "Matched: %0, Temporary Name: `%1`, Decl "
-                            "Type: `%2`, Is Builtin: `%3`")
-      << MatchedDecl << TempDeclName << MatchedVarType->getPointeeType().getUnqualifiedType().getAsString()
-      << MatchedVarType->getPointeeType()->isBuiltinType();
+  diag(
+      TempOb->getEndLoc(),
+      "Matched. Variable name: `%0`, Variable type: `%1`, Temporary type: `%2`")
+      << MatchedDecl
+      << MatchedVarType->getPointeeType().getUnqualifiedType().getAsString() << TempDeclName;
 }
 
 } // namespace bugprone
