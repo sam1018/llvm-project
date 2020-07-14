@@ -17,7 +17,7 @@ struct vector {
   iterator begin();
 };
 const int &match1 = vector().begin()[10];
-// CHECK-MESSAGES: :[[@LINE-1]]:28: warning: Matched: 'match1', Temporary Name: `vector` [bugprone-reference-returned-from-temporary]
+// CHECK-MESSAGES: :[[@LINE-1]]:28: warning: Matched: 'match1', Temporary Name: `vector`, Decl Type: `int`, Is Builtin: `1` [bugprone-reference-returned-from-temporary]
 
 // do not match if the temporary object's decl name contains *iterator*
 struct test_Iterator_ : public my_struct {};

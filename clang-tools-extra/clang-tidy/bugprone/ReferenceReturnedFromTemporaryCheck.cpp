@@ -22,42 +22,44 @@ AST_MATCHER(Expr, isLValue) { return Node.isLValue(); }
 } // namespace
 
 namespace {
-std::vector<const Stmt *> getChildren(const Stmt *stmt) {
+std::vector<const Stmt *> getChildren(const Stmt *TheStmt) {
   // we don't want to check function arguments for temporaries, as it is quite
   // common to pass temporaries as function parameters... this means, we won't
   // be able to check cases like below unfortunately...
   //
   // int& get(const X& x) { return x.val; }
   // const int& val = get(X{});
-  if (isa<CallExpr>(stmt)) {
-    const auto *callExpr = dyn_cast<CallExpr>(stmt);
-    llvm::SetVector<const Stmt *> all_args(callExpr->arg_begin(),
-                                           callExpr->arg_end());
-    llvm::SetVector<const Stmt *> non_arg_children(callExpr->child_begin(),
-                                                   callExpr->child_end());
+  if (isa<CallExpr>(TheStmt)) {
+    const auto *TheCallExpr = dyn_cast<CallExpr>(TheStmt);
+    llvm::SetVector<const Stmt *> AllArgs(TheCallExpr->arg_begin(),
+                                          TheCallExpr->arg_end());
+    llvm::SetVector<const Stmt *> NonArgChildren(TheCallExpr->child_begin(),
+                                                 TheCallExpr->child_end());
 
-    // std::cout << callExpr->getStmtClassName() << "," << all_args.size() <<
+    // std::cout << TheCallExpr->getStmtClassName() << "," << AllArgs.size() <<
     // "\n";
 
-    auto size1 = non_arg_children.size();
-    non_arg_children.set_subtract(all_args);
-    auto size2 = non_arg_children.size();
+    auto Size1 = NonArgChildren.size();
+    NonArgChildren.set_subtract(AllArgs);
+    auto Size2 = NonArgChildren.size();
 
-    if (size1 != size2 + all_args.size())
-      llvm::report_fatal_error(
-          "Unexpected. Set subtraction produced wrong result.");
+    if (Size1 != Size2 + AllArgs.size())
+      llvm::report_fatal_error("Unexpected. Removing arg children failed.");
 
-    if (isa<CXXOperatorCallExpr>(stmt)) {
+    if (isa<CXXOperatorCallExpr>(TheStmt)) {
       // this is the one case where we definitely want to check the function
       // argument for temporaries, so we don't miss out on operators like: ->,
       // *, or []... and arg 0 is the caller of the operator...
-      non_arg_children.insert(callExpr->getArg(0));
+      if (NonArgChildren.size() < 1)
+        llvm::report_fatal_error(
+            "Unexpected. CXXOperatorCallExpr has no children.");
+      NonArgChildren.insert(TheCallExpr->getArg(0));
     }
 
-    return non_arg_children.takeVector();
+    return NonArgChildren.takeVector();
   }
 
-  return {stmt->child_begin(), stmt->child_end()};
+  return {TheStmt->child_begin(), TheStmt->child_end()};
 }
 
 bool IsTempSatisfiesCondition(const MaterializeTemporaryExpr *TempOb,
@@ -89,15 +91,15 @@ enum class BranchState { Undecided, MayDangle, WontDangle };
 // or
 // create_temp_ob().ptr_var->val // and val here... lifetime extension won't
 // kick in in this case since val is not a direct member of temp_ob
-BranchState GetBranchState(const Stmt *stmt, const ASTContext &Context) {
-  if (isa<MemberExpr>(stmt)) {
-    const auto *MemExpr = dyn_cast<MemberExpr>(stmt);
+BranchState GetBranchState(const Stmt *TheStmt, const ASTContext &Context) {
+  if (isa<MemberExpr>(TheStmt)) {
+    const auto *MemExpr = dyn_cast<MemberExpr>(TheStmt);
     const auto *MemberDecl = dyn_cast<ValueDecl>(MemExpr->getMemberDecl());
     if (!isa<CXXMethodDecl>(MemberDecl))
       return BranchState::MayDangle;
   }
-  if (isa<CXXMemberCallExpr>(stmt) || isa<CXXOperatorCallExpr>(stmt)) {
-    const auto *MemberCall = dyn_cast<CallExpr>(stmt);
+  if (isa<CXXMemberCallExpr>(TheStmt) || isa<CXXOperatorCallExpr>(TheStmt)) {
+    const auto *MemberCall = dyn_cast<CallExpr>(TheStmt);
     const auto &RetType = MemberCall->getCallReturnType(Context);
     if (!RetType.isNull() &&
         (RetType->isReferenceType() || RetType->isPointerType()))
@@ -107,37 +109,38 @@ BranchState GetBranchState(const Stmt *stmt, const ASTContext &Context) {
   return BranchState::Undecided;
 }
 
-const MaterializeTemporaryExpr *GetTemporary(const Stmt *stmt,
+const MaterializeTemporaryExpr *GetTemporary(const Stmt *TheStmt,
                                              const std::string &TempWhiteListRE,
                                              const ASTContext &Context,
-                                             BranchState bs) {
+                                             BranchState CurrentBranchState) {
 
-  if (!stmt)
+  if (!TheStmt)
     return nullptr;
 
-  const auto *TempOb = dyn_cast<MaterializeTemporaryExpr>(stmt);
+  const auto *TempOb = dyn_cast<MaterializeTemporaryExpr>(TheStmt);
 
   // if this is a temporary whose lifetime is getting extended, then return the
   // temporary as it won't dangle
   if (TempOb && TempOb->getExtendingDecl())
     return TempOb;
 
-  if (bs == BranchState::Undecided)
-    bs = GetBranchState(stmt, Context);
+  if (CurrentBranchState == BranchState::Undecided)
+    CurrentBranchState = GetBranchState(TheStmt, Context);
 
-  if (bs == BranchState::WontDangle)
+  if (CurrentBranchState == BranchState::WontDangle)
     return nullptr;
 
-  if (bs == BranchState::MayDangle && TempOb) {
+  if (CurrentBranchState == BranchState::MayDangle && TempOb) {
     if (IsTempSatisfiesCondition(TempOb, TempWhiteListRE)) {
       return TempOb;
     }
   }
 
-  for (const auto *child : getChildren(stmt)) {
-    const auto *res = GetTemporary(child, TempWhiteListRE, Context, bs);
-    if (res)
-      return res;
+  for (const auto *Child : getChildren(TheStmt)) {
+    const auto *Res =
+        GetTemporary(Child, TempWhiteListRE, Context, CurrentBranchState);
+    if (Res)
+      return Res;
   }
 
   return nullptr;
@@ -157,10 +160,15 @@ void ReferenceReturnedFromTemporaryCheck::storeOptions(
 
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
     MatchFinder *Finder) {
+  // checking expr(isLValue()) saves us from an inconsistent crash with template
+  // dependant expressions, when we try to check if a function's return type is
+  // ref or pointer... happens with QualType member function call...
   Finder->addMatcher(
       varDecl(unless(isExpansionInSystemHeader()),
-              hasType(lValueReferenceType()), unless(parmVarDecl()),
-              hasInitializer(traverse(TK_AsIs, expr().bind("theInitializer"))))
+              hasType(lValueReferenceType().bind("theVarType")),
+              unless(parmVarDecl()),
+              hasInitializer(
+                  traverse(TK_AsIs, expr(isLValue()).bind("theInitializer"))))
           .bind("theVarDecl"),
       this);
 }
@@ -187,8 +195,13 @@ void ReferenceReturnedFromTemporaryCheck::check(
 
   const auto &TempDeclName = TempCXXDecl->getQualifiedNameAsString();
 
-  diag(TempOb->getEndLoc(), "Matched: %0, Temporary Name: `%1`")
-      << MatchedDecl << TempDeclName;
+  const auto *MatchedVarType =
+      Result.Nodes.getNodeAs<LValueReferenceType>("theVarType");
+
+  diag(TempOb->getEndLoc(), "Matched: %0, Temporary Name: `%1`, Decl "
+                            "Type: `%2`, Is Builtin: `%3`")
+      << MatchedDecl << TempDeclName << MatchedVarType->getPointeeType().getUnqualifiedType().getAsString()
+      << MatchedVarType->getPointeeType()->isBuiltinType();
 }
 
 } // namespace bugprone
