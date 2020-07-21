@@ -98,10 +98,10 @@ bool IsCastingFunction(const CallExpr *CallExprReturningTemp,
     return false;
 
   std::string FuncName;
-  llvm::raw_string_ostream OS(FuncName);
-  FuncDecl->printName(OS);
+  llvm::raw_string_ostream FuncNameOS(FuncName);
+  FuncDecl->printName(FuncNameOS);
 
-  if (llvm::is_contained(CastFunctions, FuncName) &&
+  if (llvm::is_contained(CastFunctions, FuncNameOS.str()) &&
       isa<MaterializeTemporaryExpr>(CallExprReturningTemp->getArg(0)))
     return true;
 
