@@ -37,6 +37,7 @@ const int &match6 = my_struct().get_this_ptr()->ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched. Variable name: `'match6'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
 const int &match7 = my_struct()->val2;
 // CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched. Variable name: `'match7'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
+
 // whitelist test - CastFunctionsWhiteList ('cast_func2' is whitelisted):
 my_struct ob;
 my_struct cast_func(const my_struct &);
@@ -45,9 +46,9 @@ const int &match8 = cast_func(ob).ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:33: warning: Matched. Variable name: `'match8'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
 const int &match9 = cast_func(my_struct{}).ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:42:  warning: Matched. Variable name: `'match9'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
-const int &match8_1_still_match_func_arg_lvalue = cast_func2(ob).ref_get();
-// CHECK-MESSAGES: :[[@LINE-1]]:64: warning: Matched. Variable name: `'match8_1_still_match_func_arg_lvalue'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
-const int &match9_1_no_match_func_whitelisted = cast_func2(my_struct{}).ref_get();
+const int &no_match8_1_casting_func_arg_is_non_temp = cast_func2(ob).ref_get();
+const int &match9_1_casting_func_arg_is_temporary = cast_func2(my_struct{}).ref_get();
+// CHECK-MESSAGES: :[[@LINE-1]]:75: warning: Matched. Variable name: `'match9_1_casting_func_arg_is_temporary'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
 
 // No match tests:
 // non-reference var decls do not match

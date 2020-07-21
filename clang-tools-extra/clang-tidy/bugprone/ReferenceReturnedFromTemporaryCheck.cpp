@@ -79,33 +79,28 @@ bool IsTempSatisfiesCondition(const MaterializeTemporaryExpr *TempOb,
              .match(TempDeclName) == false;
 }
 
-// This is to whitelist casting functions, such as std::static_pointer_cast
-// for example consider the following two cases:
-// 1. const auto& x = std::static_pointer_cast<XX>(ob)->val; // ok
-// 2. const auto& x = std::static_pointer_cast<XX>(XX{})->val; // x may dangle
-// this check is to whitelist (1). The actual name of the casting function
-// is configurable through option "CastFunctionsWhiteList"
-bool IsCastingFunction(const CallExpr *CallExprReturningTemp,
-                       const std::vector<std::string> &CastFunctions) {
-  if (!CallExprReturningTemp)
+bool IsFuncFirstArgTemporary(const CallExpr *FuncCallExpr) {
+  if (FuncCallExpr->getNumArgs() < 1)
     return false;
 
-  const FunctionDecl *FuncDecl = CallExprReturningTemp->getDirectCallee();
+  return isa<MaterializeTemporaryExpr>(FuncCallExpr->getArg(0));
+}
+
+bool IsCastingFunc(const CallExpr *FuncCallExpr,
+    const std::vector<std::string> &CastFunctions) {
+  if (!FuncCallExpr)
+    return false;
+
+  const FunctionDecl *FuncDecl = FuncCallExpr->getDirectCallee();
   if (!FuncDecl)
     return false;
 
-  if (CallExprReturningTemp->getNumArgs() != 1)
-    return false;
 
   std::string FuncName;
   llvm::raw_string_ostream FuncNameOS(FuncName);
   FuncDecl->printName(FuncNameOS);
 
-  if (llvm::is_contained(CastFunctions, FuncNameOS.str()) &&
-      isa<MaterializeTemporaryExpr>(CallExprReturningTemp->getArg(0)))
-    return true;
-
-  return false;
+  return llvm::is_contained(CastFunctions, FuncNameOS.str());
 }
 
 // branch state remains undecided until we see the first member variable or
@@ -160,10 +155,17 @@ GetTemporary(const Stmt *TheStmt, const std::string &TempWhiteListRE,
     return nullptr;
 
   if (CurrentBranchState == BranchState::MayDangle && TempOb) {
-    if (IsTempSatisfiesCondition(TempOb, TempWhiteListRE) &&
-        !IsCastingFunction(dyn_cast<CallExpr>(*TempOb->child_begin()),
-                           CastFunctions)) {
-      return TempOb;
+    if (IsTempSatisfiesCondition(TempOb, TempWhiteListRE)) {
+      const auto *FuncCallReturningTemp = dyn_cast<CallExpr>(TempOb->IgnoreImplicit());
+      // This is to "whitelist" casting functions, such as
+      // std::static_pointer_cast for example consider the following two cases:
+      // 1. const auto& x = std::static_pointer_cast<XX>(ob)->val; // ok
+      // 2. const auto& x = std::static_pointer_cast<XX>(XX{})->val; // x may
+      // dangle... this check is to whitelist (1). The actual names of the casting
+      // functions are configurable through option "CastFunctionsWhiteList"
+      if (!IsCastingFunc(FuncCallReturningTemp, CastFunctions) ||
+          IsFuncFirstArgTemporary(FuncCallReturningTemp))
+          return TempOb;
     }
   }
 

@@ -9,7 +9,12 @@ test_file_name_prefix = f"{test_path}/checkers/{test_name}"
 
 def extra_args(test_case):
     if test_case == 2:
-        return ["-extra-arg=-std=c++17"]
+        options = {'CheckOptions': [
+        {
+        'key': 'bugprone-reference-returned-from-temporary.CastFunctionsWhiteList',
+        'value': 'static_pointer_cast'
+        }]}
+        return ["-extra-arg=-std=c++17", f"-config={options}"]
     if test_case == 1:
         options = {'CheckOptions': [
         {

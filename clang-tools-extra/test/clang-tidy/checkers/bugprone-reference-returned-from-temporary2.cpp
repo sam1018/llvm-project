@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <map>
+#include <memory>
 
 std::optional<std::pair<std::string, std::string>> f() { return std::make_optional(std::make_pair("abc", "def")); }
 
@@ -12,3 +13,11 @@ const auto &match1 = f()->first;
 const auto &no_match1{std::to_string(10)};
 std::map<int, std::string> m;
 const auto &no_match2 = m[10];
+
+struct Base {
+  int &get_ref();
+};
+struct Derived : Base {};
+
+const auto &sp = std::make_shared<Derived>();
+const auto& no_match3 = std::static_pointer_cast<Base>(sp)->get_ref();
