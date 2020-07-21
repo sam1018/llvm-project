@@ -79,6 +79,35 @@ bool IsTempSatisfiesCondition(const MaterializeTemporaryExpr *TempOb,
              .match(TempDeclName) == false;
 }
 
+// This is to whitelist casting functions, such as std::static_pointer_cast
+// for example consider the following two cases:
+// 1. const auto& x = std::static_pointer_cast<XX>(ob)->val; // ok
+// 2. const auto& x = std::static_pointer_cast<XX>(XX{})->val; // x may dangle
+// this check is to whitelist (1). The actual name of the casting function
+// is configurable through option "CastFunctionsWhiteList"
+bool IsCastingFunction(const CallExpr *CallExprReturningTemp,
+                       const std::vector<std::string> &CastFunctions) {
+  if (!CallExprReturningTemp)
+    return false;
+
+  const FunctionDecl *FuncDecl = CallExprReturningTemp->getDirectCallee();
+  if (!FuncDecl)
+    return false;
+
+  if (CallExprReturningTemp->getNumArgs() != 1)
+    return false;
+
+  std::string FuncName;
+  llvm::raw_string_ostream OS(FuncName);
+  FuncDecl->printName(OS);
+
+  if (llvm::is_contained(CastFunctions, FuncName) &&
+      isa<MaterializeTemporaryExpr>(CallExprReturningTemp->getArg(0)))
+    return true;
+
+  return false;
+}
+
 // branch state remains undecided until we see the first member variable or
 // member function call. branch state is MayDangle if it is a member variable or
 // member function call that returns reference or pointer. otherwise it's
@@ -109,10 +138,10 @@ BranchState GetBranchState(const Stmt *TheStmt, const ASTContext &Context) {
   return BranchState::Undecided;
 }
 
-const MaterializeTemporaryExpr *GetTemporary(const Stmt *TheStmt,
-                                             const std::string &TempWhiteListRE,
-                                             const ASTContext &Context,
-                                             BranchState CurrentBranchState) {
+const MaterializeTemporaryExpr *
+GetTemporary(const Stmt *TheStmt, const std::string &TempWhiteListRE,
+             const ASTContext &Context, BranchState CurrentBranchState,
+             const std::vector<std::string> &CastFunctions) {
 
   if (!TheStmt)
     return nullptr;
@@ -131,14 +160,16 @@ const MaterializeTemporaryExpr *GetTemporary(const Stmt *TheStmt,
     return nullptr;
 
   if (CurrentBranchState == BranchState::MayDangle && TempOb) {
-    if (IsTempSatisfiesCondition(TempOb, TempWhiteListRE)) {
+    if (IsTempSatisfiesCondition(TempOb, TempWhiteListRE) &&
+        !IsCastingFunction(dyn_cast<CallExpr>(*TempOb->child_begin()),
+                           CastFunctions)) {
       return TempOb;
     }
   }
 
   for (const auto *Child : getChildren(TheStmt)) {
-    const auto *Res =
-        GetTemporary(Child, TempWhiteListRE, Context, CurrentBranchState);
+    const auto *Res = GetTemporary(Child, TempWhiteListRE, Context,
+                                   CurrentBranchState, CastFunctions);
     if (Res)
       return Res;
   }
@@ -151,11 +182,19 @@ const MaterializeTemporaryExpr *GetTemporary(const Stmt *TheStmt,
 ReferenceReturnedFromTemporaryCheck::ReferenceReturnedFromTemporaryCheck(
     StringRef Name, ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      TempWhiteListRE(Options.get("TempWhiteListRE", "")) {}
+      TempWhiteListRE(Options.get("TempWhiteListRE", "")),
+      CastFunctionsWhiteList(Options.get("CastFunctionsWhiteList", "")) {
+  llvm::SmallVector<StringRef, 10> Temp;
+  StringRef(CastFunctionsWhiteList).split(Temp, ",");
+  CastFunctions.resize(Temp.size());
+  std::transform(Temp.begin(), Temp.end(), CastFunctions.begin(),
+                 [](const auto &StrRef) { return std::string(StrRef); });
+}
 
 void ReferenceReturnedFromTemporaryCheck::storeOptions(
     ClangTidyOptions::OptionMap &Opts) {
   Options.store(Opts, "TempWhiteListRE", TempWhiteListRE);
+  Options.store(Opts, "CastFunctionsWhiteList", CastFunctionsWhiteList);
 }
 
 void ReferenceReturnedFromTemporaryCheck::registerMatchers(
@@ -176,11 +215,10 @@ void ReferenceReturnedFromTemporaryCheck::registerMatchers(
 void ReferenceReturnedFromTemporaryCheck::check(
     const MatchFinder::MatchResult &Result) {
   const auto *MatchedDecl = Result.Nodes.getNodeAs<VarDecl>("theVarDecl");
-  // MatchedDecl->dump();
 
-  const auto *TempOb =
-      GetTemporary(Result.Nodes.getNodeAs<Expr>("theInitializer"),
-                   TempWhiteListRE, *Result.Context, BranchState::Undecided);
+  const auto *TempOb = GetTemporary(
+      Result.Nodes.getNodeAs<Expr>("theInitializer"), TempWhiteListRE,
+      *Result.Context, BranchState::Undecided, CastFunctions);
 
   if (!TempOb || TempOb->getExtendingDecl())
     return;
@@ -202,7 +240,10 @@ void ReferenceReturnedFromTemporaryCheck::check(
       TempOb->getEndLoc(),
       "Matched. Variable name: `%0`, Variable type: `%1`, Temporary type: `%2`")
       << MatchedDecl
-      << MatchedVarType->getPointeeType().getUnqualifiedType().getAsString() << TempDeclName;
+      << MatchedVarType->getPointeeType().getUnqualifiedType().getAsString()
+      << TempDeclName;
+
+  // MatchedDecl->dump();
 }
 
 } // namespace bugprone

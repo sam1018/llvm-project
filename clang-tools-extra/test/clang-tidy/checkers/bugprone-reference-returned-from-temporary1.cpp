@@ -1,4 +1,5 @@
-// RUN: %check_clang_tidy %s bugprone-reference-returned-from-temporary %t
+// RUN: %check_clang_tidy %s bugprone-reference-returned-from-temporary %t -- -config="{CheckOptions: [{key: bugprone-reference-returned-from-temporary.TempWhiteListRE, value: '.*iterator.*|.*proxy.*|ns::match_exact_name_in_ns'}]}" --
+// Check check_dangling_reference.py for updated config options to run tests
 
 struct my_struct2 {
   int val2;
@@ -36,6 +37,17 @@ const int &match6 = my_struct().get_this_ptr()->ref_get();
 // CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched. Variable name: `'match6'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
 const int &match7 = my_struct()->val2;
 // CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Matched. Variable name: `'match7'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
+// whitelist test - CastFunctionsWhiteList ('cast_func2' is whitelisted):
+my_struct ob;
+my_struct cast_func(const my_struct &);
+my_struct cast_func2(const my_struct &);
+const int &match8 = cast_func(ob).ref_get();
+// CHECK-MESSAGES: :[[@LINE-1]]:33: warning: Matched. Variable name: `'match8'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
+const int &match9 = cast_func(my_struct{}).ref_get();
+// CHECK-MESSAGES: :[[@LINE-1]]:42:  warning: Matched. Variable name: `'match9'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
+const int &match8_1_still_match_func_arg_lvalue = cast_func2(ob).ref_get();
+// CHECK-MESSAGES: :[[@LINE-1]]:64: warning: Matched. Variable name: `'match8_1_still_match_func_arg_lvalue'`, Variable type: `int`, Temporary type: `my_struct` [bugprone-reference-returned-from-temporary]
+const int &match9_1_no_match_func_whitelisted = cast_func2(my_struct{}).ref_get();
 
 // No match tests:
 // non-reference var decls do not match
@@ -61,3 +73,17 @@ const auto &no_match_arg_4 = arg_cr_int_returns_r_my_struct(create_my_struct().r
 // if function returns non-ref, that's ok
 const int &no_match_function_returns_non_ref = my_struct().get();
 const int &no_match_function_returns_non_ref2 = create_my_struct().get_this_ref().get();
+
+// whitelist test - TempWhiteListRE('.*iterator.*|.*proxy.*|ns::match_exact_name_in_ns'):
+struct test_Iterator_ : public my_struct {};
+struct test_Proxy_ : public my_struct {};
+int &no_match1 = test_Iterator_().ref_get();
+int &no_match2 = test_Proxy_().ref_get();
+
+namespace ns {
+struct match_exact_name_in_ns {
+  int &ref_get();
+};
+} // namespace ns
+
+int &no_match3 = ns::match_exact_name_in_ns().ref_get();

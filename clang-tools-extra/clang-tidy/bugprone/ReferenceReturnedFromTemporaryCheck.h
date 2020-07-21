@@ -29,6 +29,8 @@ public:
 
 private:
   const std::string TempWhiteListRE;
+  const std::string CastFunctionsWhiteList;
+  std::vector<std::string> CastFunctions;
 };
 
 } // namespace bugprone
